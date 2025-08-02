@@ -1,0 +1,1 @@
+package net.samitkumar.voting.result;

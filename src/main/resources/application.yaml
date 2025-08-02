@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: voting
+    data:
+      redis:
+        channel:
+          name: voting-channel
