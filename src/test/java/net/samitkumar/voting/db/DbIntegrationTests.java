@@ -39,10 +39,10 @@ public class DbIntegrationTests {
                     voteRepository
                             .saveAll(
                                     List.of(
-                                            new Vote(null, candidates.getFirst().id(), "voter1", LocalDate.now()),
-                                            new Vote(null, candidates.getFirst().id(), "voter2", LocalDate.now()),
-                                            new Vote(null, candidates.getFirst().id(), "voter3", LocalDate.now()),
-                                            new Vote(null, candidates.getLast().id(), "voter4", LocalDate.now())
+                                            new Vote(null, candidates.getFirst().id(), "voter1", LocalDateTime.now()),
+                                            new Vote(null, candidates.getFirst().id(), "voter2", LocalDateTime.now()),
+                                            new Vote(null, candidates.getFirst().id(), "voter3", LocalDateTime.now()),
+                                            new Vote(null, candidates.getLast().id(), "voter4", LocalDateTime.now())
                                     )
                             );
                 },
