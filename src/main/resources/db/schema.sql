@@ -9,13 +9,15 @@ CREATE TABLE candidate (
 CREATE TABLE vote (
       id BIGSERIAL PRIMARY KEY,
       candidate_id BIGINT NOT NULL,
-      voter_id VARCHAR(255) NOT NULL,
+      voter_id VARCHAR(255) NOT NULL UNIQUE,
+      voting_time TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT fk_vote_candidate FOREIGN KEY (candidate_id) REFERENCES candidate(id)
 );
 
 CREATE TABLE error_vote (
       id BIGSERIAL PRIMARY KEY,
-      vote_id BIGINT,
+      voting_time TIMESTAMP,
       candidate_id BIGINT,
       voter_id VARCHAR(255),
       error_message TEXT NOT NULL

@@ -12,7 +12,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.connection.ReactiveSubscription;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 @Configuration
@@ -23,7 +22,7 @@ public class VoteProcessor {
     final VoteRepository voteRepository;
     final ErrorVoteRepository errorVoteRepository;
 
-    @Value("${spring.application.data.redis.channel.name}")
+    @Value("${spring.data.redis.channel-name}")
     private String redisChannelName;
 
     @EventListener
@@ -42,7 +41,7 @@ public class VoteProcessor {
                     log.error("Persisting Vote::onError {}", o, throwable);
                     var vote = (Vote) o;
                     errorVoteRepository.save(
-                            new ErrorVote(null, vote.id(), vote.candidateId(), vote.voterId(), throwable.getMessage())
+                            new ErrorVote(null, vote.votingTime(), vote.candidateId(), vote.voterId(), throwable.getMessage())
                     );
                 })
                 .doOnNext(db -> log.info("Persisting Vote::dbReply {}", db))

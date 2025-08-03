@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -37,13 +39,18 @@ public class DbIntegrationTests {
                     voteRepository
                             .saveAll(
                                     List.of(
-                                            new Vote(null, candidates.getFirst().id(), "voter1"),
-                                            new Vote(null, candidates.getLast().id(), "voter2")
+                                            new Vote(null, candidates.getFirst().id(), "voter1", LocalDate.now()),
+                                            new Vote(null, candidates.getFirst().id(), "voter2", LocalDate.now()),
+                                            new Vote(null, candidates.getFirst().id(), "voter3", LocalDate.now()),
+                                            new Vote(null, candidates.getLast().id(), "voter4", LocalDate.now())
                                     )
                             );
                 },
                 () -> voteRepository
                         .findAll()
+                        .forEach(System.out::println),
+                () -> voteRepository
+                        .votingResults()
                         .forEach(System.out::println)
 
         );
