@@ -1,5 +1,8 @@
 package net.samitkumar.voting;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import net.samitkumar.voting.db.Vote;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -20,7 +23,11 @@ public class VotingApplication {
 	@Bean
 	public ReactiveRedisTemplate<String, Vote> reactiveRedisTemplate(ReactiveRedisConnectionFactory factory) {
 
-		Jackson2JsonRedisSerializer<Vote> serializer = new Jackson2JsonRedisSerializer<>(Vote.class);
+		ObjectMapper objectMapper = new ObjectMapper();
+		objectMapper.registerModule(new JavaTimeModule());
+		objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+		Jackson2JsonRedisSerializer<Vote> serializer = new Jackson2JsonRedisSerializer<>(objectMapper, Vote.class);
 		RedisSerializationContext.RedisSerializationContextBuilder<String, Vote> builder =
 				RedisSerializationContext.newSerializationContext(new StringRedisSerializer());
 		RedisSerializationContext<String, Vote> context = builder.value(serializer).build();

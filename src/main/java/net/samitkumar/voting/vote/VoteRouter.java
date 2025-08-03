@@ -67,8 +67,7 @@ public class VoteRouter {
                         .bodyToMono(Vote.class)
                         .doOnNext(vote -> log.info("Received vote: {}", vote))
                         .map(vote -> new Vote(null, vote.candidateId(), UUID.randomUUID().toString(), LocalDateTime.now()))
-                                .flatMap(ServerResponse.ok()::bodyValue)
-                        /*.flatMap(v -> reactiveRedisTemplate.convertAndSend(redisChannelName, v)
+                        .flatMap(v -> reactiveRedisTemplate.convertAndSend(redisChannelName, v)
                                 .doOnNext(reply -> log.info("Received vote send to redis: {}", reply))
                                 .map(redisReplyId -> Map.of("voterId", v.voterId(), "processorId", redisReplyId))
                                 .flatMap(result -> ServerResponse
@@ -76,7 +75,7 @@ public class VoteRouter {
                                         .cookie(ResponseCookie.from(VOTE_COOKIE_NAME, v.voterId()).build())
                                         .bodyValue(result)
                                 )
-                        )*/
+                        )
                 );
     }
 
