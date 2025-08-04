@@ -46,7 +46,7 @@ public class VotingResultConfiguration {
         return new SimpleUrlHandlerMapping(map, order);
     }
 
-    @Scheduled(fixedRate = 20000)
+    @Scheduled(fixedRate = 10000)
     void scheduled() {
         log.info("Scheduled trigger to notify result to all ws session");
         sinks().tryEmitNext(emitResponse());
@@ -54,8 +54,7 @@ public class VotingResultConfiguration {
 
     @SneakyThrows
     private String emitResponse() {
-        var votingResult = new VotingResults(
-                LocalDateTime.now(),voteRepository.votingResults());
+        var votingResult = new VotingResults(LocalDateTime.now(),voteRepository.votingResults());
         return objectMapper
                 .writeValueAsString(votingResult);
     }

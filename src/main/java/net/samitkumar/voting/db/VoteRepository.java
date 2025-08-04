@@ -20,4 +20,11 @@ public interface VoteRepository extends ListCrudRepository<Vote, Long> {
     ORDER BY c.id
     """)
     List<VoteCount> votingResults();
+
+    @Query("""
+    SELECT COUNT(*)
+    FROM vote
+    """)
+    int totalVoteCount();
+
 }

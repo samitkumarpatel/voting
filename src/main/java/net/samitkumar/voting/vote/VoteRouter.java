@@ -18,7 +18,6 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -86,7 +85,12 @@ public class VoteRouter {
                                 .map(redisReplyId -> Map.of("voterId", v.voterId(), "processorId", redisReplyId))
                                 .flatMap(result -> ServerResponse
                                         .ok()
-                                        .cookie(ResponseCookie.from(VOTE_COOKIE_NAME, v.voterId()).sameSite("None").secure(true).path("/").build())
+                                        .cookie(ResponseCookie.from(VOTE_COOKIE_NAME, v.voterId())
+                                                .httpOnly(false)  // Allow JavaScript access
+                                                .secure(true)     // HTTPS only
+                                                .sameSite("None")  // Better for cross-site requests
+                                                .path("/")
+                                                .build())
                                         .bodyValue(result)
                                 )
                         )

@@ -17,14 +17,19 @@
                 min-height: 100vh;
             }
             .candidate-avatar {
-                width: 80px !important;
-                height: 80px !important;
+                width: 100px !important;
+                height: 100px !important;
             }
             .vote-card {
                 transition: all 0.3s ease;
             }
             .vote-card:hover {
                 transform: translateY(-4px);
+            }
+            .chart-container {
+                position: relative;
+                height: 300px;
+                width: 100%;
             }
         </style>
     </head>
@@ -34,11 +39,12 @@
         <script src="https://unpkg.com/pinia@2/dist/pinia.iife.js"></script>
         <script src="https://unpkg.com/vue-router@4.0.15/dist/vue-router.global.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
         
         <div id="app"></div>
 
         <script>
-            const { createApp, ref, computed, onMounted } = Vue;
+            const { createApp, ref, computed, onMounted, onUnmounted, watch, nextTick } = Vue;
             const { createPinia, defineStore, storeToRefs } = Pinia;
             const { createRouter, createWebHashHistory } = VueRouter;
             const { createVuetify } = Vuetify;
@@ -97,6 +103,8 @@
                 const voting = ref(false);
                 const voteStatus = ref(null);
                 const hasVotedState = ref(false); // Reactive state for voting status
+                const realTimeResults = ref(null); // Real-time results from WebSocket
+                const websocket = ref(null); // WebSocket connection
 
                 // Check if user has already voted
                 const updateVoteState = () => {
@@ -227,6 +235,79 @@
                     error.value = '';
                 };
 
+                // Connect to WebSocket for real-time results
+                const connectWebSocket = () => {
+                    try {
+                        // Close existing connection if any
+                        if (websocket.value && websocket.value.readyState === WebSocket.OPEN) {
+                            websocket.value.close();
+                        }
+
+                        console.log('Connecting to WebSocket: ws://localhost:8080/results');
+                        websocket.value = new WebSocket('ws://localhost:8080/results');
+                        
+                        websocket.value.onopen = () => {
+                            console.log('WebSocket connected to results endpoint');
+                        };
+                        
+                        websocket.value.onmessage = (event) => {
+                            try {
+                                console.log('Raw WebSocket message received:', event.data);
+                                const data = JSON.parse(event.data);
+                                console.log('Parsed WebSocket data:', data);
+                                console.log('Vote count array:', data.voteCount);
+                                
+                                // Validate data structure
+                                if (data && data.voteCount && Array.isArray(data.voteCount)) {
+                                    console.log('Valid data structure detected, updating realTimeResults');
+                                    realTimeResults.value = data;
+                                } else {
+                                    console.warn('Invalid data structure received:', data);
+                                }
+                            } catch (err) {
+                                console.error('Error parsing WebSocket message:', err);
+                                console.error('Raw message that failed to parse:', event.data);
+                            }
+                        };
+                        
+                        websocket.value.onclose = (event) => {
+                            console.log('WebSocket connection closed:', event.code, event.reason);
+                            // Only attempt to reconnect if it wasn't a manual close
+                            if (event.code !== 1000) {
+                                setTimeout(() => {
+                                    console.log('Attempting to reconnect WebSocket...');
+                                    connectWebSocket();
+                                }, 3000);
+                            }
+                        };
+                        
+                        websocket.value.onerror = (error) => {
+                            console.error('WebSocket error:', error);
+                        };
+                    } catch (err) {
+                        console.error('Failed to connect to WebSocket:', err);
+                        // Retry connection after 5 seconds on error
+                        setTimeout(() => {
+                            console.log('Retrying WebSocket connection after error...');
+                            connectWebSocket();
+                        }, 5000);
+                    }
+                };
+
+                // Disconnect WebSocket
+                const disconnectWebSocket = () => {
+                    if (websocket.value && websocket.value.readyState === WebSocket.OPEN) {
+                        console.log('Manually closing WebSocket connection');
+                        websocket.value.close(1000, 'Component unmounted'); // Normal closure
+                        websocket.value = null;
+                    }
+                };
+
+                // Get candidate name by ID
+                const getCandidateById = (candidateId) => {
+                    return candidates.value.find(candidate => candidate.id === candidateId);
+                };
+
                 return {
                     candidates,
                     loading,
@@ -235,11 +316,16 @@
                     voting,
                     voteStatus,
                     hasVoted: hasVotedState, // Use reactive state instead of computed
+                    realTimeResults,
+                    websocket,
                     fetchCandidates,
                     submitVote,
                     checkVoteStatus,
                     clearMessages,
-                    clearVoteState
+                    clearVoteState,
+                    connectWebSocket,
+                    disconnectWebSocket,
+                    getCandidateById
                 };
             });
 
@@ -325,18 +411,19 @@
                         </v-row>
                         
                                                 <!-- Candidates Grid -->
-                        <v-row v-else-if="candidates.length && !loading && !hasVoted" justify="center" align="center">
+                        <v-row v-else-if="candidates.length && !loading && !hasVoted" justify="center" align="center" class="ma-2">
                             <v-col 
                                 v-for="candidate in candidates" 
                                 :key="candidate.id"
                                 cols="12" 
-                                sm="6" 
-                                md="4"
-                                lg="3"
-                                class="d-flex justify-center"
+                                sm="12" 
+                                md="6"
+                                lg="4"
+                                xl="3"
+                                class="d-flex justify-center pa-4"
                             >
                                 <v-card 
-                                    class="vote-card pa-3 text-center mx-auto"
+                                    class="vote-card pa-6 text-center mx-auto mb-4"
                                     :class="{ 
                                         'elevation-8': !voting && !hasVoted, 
                                         'elevation-2': voting,
@@ -346,11 +433,13 @@
                                     hover
                                     @click="vote(candidate.id)"
                                     :style="{ cursor: (voting || hasVoted) ? 'not-allowed' : 'pointer' }"
-                                    max-width="300"
+                                    max-width="340"
+                                    min-width="300"
+                                    width="100%"
                                 >
                                     <v-avatar 
-                                        size="80" 
-                                        class="ma-3 candidate-avatar"
+                                        size="100" 
+                                        class="ma-4 candidate-avatar"
                                     >
                                         <v-img
                                             :src="candidate.partySymbolUrl"
@@ -358,7 +447,7 @@
                                             @error="handleImageError"
                                         >
                                             <template v-slot:placeholder>
-                                                <v-icon size="60" color="grey">mdi-account</v-icon>
+                                                <v-icon size="80" color="grey">mdi-account</v-icon>
                                             </template>
                                         </v-img>
                                     </v-avatar>
@@ -368,10 +457,10 @@
                                         <v-icon v-if="hasVoted" color="success" class="ml-2">mdi-check-circle</v-icon>
                                     </v-card-title>
                                     
-                                    <v-card-actions class="justify-center">
+                                    <v-card-actions class="justify-center pb-4">
                                         <v-btn
                                             color="primary"
-                                            size="default"
+                                            size="large"
                                             variant="elevated"
                                             :loading="voting"
                                             :disabled="voting || hasVoted"
@@ -424,7 +513,7 @@
                 }
             };
 
-            // Results Component with Material UI
+            // Results Component with Material UI and Real-time WebSocket
             const ResultsComponent = {
                 template: `
                     <v-container>
@@ -433,9 +522,25 @@
                                 <v-card class="text-center pa-6 mb-6" color="rgba(255,255,255,0.9)">
                                     <v-card-title class="text-h3 font-weight-bold">
                                         <v-icon size="40" class="mr-2">mdi-chart-bar</v-icon>
-                                        Voting Results
+                                        Live Voting Results
                                     </v-card-title>
+                                    <v-card-subtitle class="text-h6" v-if="lastUpdate">
+                                        Last updated: {{ formatTimestamp(lastUpdate) }}
+                                    </v-card-subtitle>
                                 </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- WebSocket Connection Status -->
+                        <v-row justify="center" class="mb-4">
+                            <v-col cols="auto">
+                                <v-chip 
+                                    :color="isConnected ? 'success' : 'error'" 
+                                    variant="elevated"
+                                    prepend-icon="mdi-wifi"
+                                >
+                                    {{ isConnected ? 'Live Connected' : 'Disconnected' }}
+                                </v-chip>
                             </v-col>
                         </v-row>
                         
@@ -449,7 +554,7 @@
                                     width="5"
                                 ></v-progress-circular>
                                 <v-card class="mt-4 pa-4" color="rgba(255,255,255,0.9)">
-                                    <v-card-text class="text-h6">Loading results...</v-card-text>
+                                    <v-card-text class="text-h6">Loading candidates...</v-card-text>
                                 </v-card>
                             </v-col>
                         </v-row>
@@ -468,48 +573,84 @@
                             </v-col>
                         </v-row>
                         
-                        <!-- Results List -->
-                        <v-row v-if="candidates.length && !loading">
-                            <v-col cols="12">
+                        <!-- Chart and Results -->
+                        <v-row v-if="chartData && !loading">
+                            <!-- Bar Chart -->
+                            <v-col cols="12" lg="8">
                                 <v-card class="pa-4" color="rgba(255,255,255,0.95)">
+                                    <v-card-title class="text-h5 mb-4">
+                                        <v-icon class="mr-2">mdi-chart-bar</v-icon>
+                                        Vote Distribution
+                                    </v-card-title>
+                                    <div class="chart-container">
+                                        <canvas ref="chartCanvas" width="400" height="200"></canvas>
+                                    </div>
+                                </v-card>
+                            </v-col>
+                            
+                            <!-- Results List -->
+                            <v-col cols="12" lg="4">
+                                <v-card class="pa-4" color="rgba(255,255,255,0.95)">
+                                    <v-card-title class="text-h5 mb-4">
+                                        <v-icon class="mr-2">mdi-format-list-numbered</v-icon>
+                                        Live Results
+                                    </v-card-title>
                                     <v-list>
                                         <v-list-item
-                                            v-for="(candidate, index) in candidates"
-                                            :key="candidate.id"
+                                            v-for="(result, index) in sortedResults"
+                                            :key="result.candidateId"
                                             class="mb-2"
                                         >
                                             <template v-slot:prepend>
-                                                <v-avatar size="60">
+                                                <v-avatar size="50">
                                                     <v-img
-                                                        :src="candidate.partySymbolUrl"
-                                                        :alt="candidate.name + ' Symbol'"
+                                                        :src="result.candidate?.partySymbolUrl"
+                                                        :alt="result.candidate?.name + ' Symbol'"
                                                         @error="handleImageError"
                                                     >
                                                         <template v-slot:placeholder>
-                                                            <v-icon size="30" color="grey">mdi-account</v-icon>
+                                                            <v-icon size="25" color="grey">mdi-account</v-icon>
                                                         </template>
                                                     </v-img>
                                                 </v-avatar>
                                             </template>
                                             
                                             <v-list-item-title class="text-h6 font-weight-bold">
-                                                {{ candidate.name }}
+                                                {{ result.candidate?.name || 'Unknown Candidate' }}
                                             </v-list-item-title>
                                             
                                             <template v-slot:append>
-                                                <v-chip
-                                                    color="primary"
-                                                    variant="elevated"
-                                                    size="large"
-                                                    prepend-icon="mdi-vote"
-                                                >
-                                                    {{ candidate.votes || 0 }} votes
-                                                </v-chip>
+                                                <div class="text-center">
+                                                    <v-chip
+                                                        :color="index === 0 && result.count > 0 ? 'success' : 'primary'"
+                                                        variant="elevated"
+                                                        size="large"
+                                                        prepend-icon="mdi-vote"
+                                                    >
+                                                        {{ result.count }} votes
+                                                    </v-chip>
+                                                    <div class="text-caption mt-1">
+                                                        {{ getPercentage(result.count) }}%
+                                                    </div>
+                                                </div>
                                             </template>
                                             
-                                            <v-divider v-if="index < candidates.length - 1" class="mt-3"></v-divider>
+                                            <v-divider v-if="index < sortedResults.length - 1" class="mt-3"></v-divider>
                                         </v-list-item>
                                     </v-list>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- No Data State -->
+                        <v-row v-if="!chartData && !loading && !error" justify="center">
+                            <v-col cols="12" class="text-center">
+                                <v-card class="pa-6" color="rgba(255,255,255,0.9)">
+                                    <v-icon size="80" color="grey" class="mb-4">mdi-chart-bar</v-icon>
+                                    <v-card-title class="text-h5">No Results Available</v-card-title>
+                                    <v-card-text class="text-h6">
+                                        Waiting for real-time voting data...
+                                    </v-card-text>
                                 </v-card>
                             </v-col>
                         </v-row>
@@ -517,24 +658,318 @@
                 `,
                 setup() {
                     const store = useVotingStore();
-                    const { candidates, loading, error } = storeToRefs(store);
-                    const { fetchCandidates, clearMessages } = store;
+                    const { candidates, loading, error, realTimeResults, websocket } = storeToRefs(store);
+                    const { fetchCandidates, clearMessages, connectWebSocket, disconnectWebSocket, getCandidateById } = store;
+                    
+                    const chartCanvas = ref(null);
+                    const chart = ref(null);
+                    const chartData = ref(null);
+                    const lastUpdate = ref(null);
+                    const isConnected = ref(false);
 
-                    onMounted(() => {
-                        clearMessages();
-                        fetchCandidates();
-                    });
+                    // Define all functions first before any watchers
 
+                    // Calculate percentage
+                    const getPercentage = (count) => {
+                        if (!chartData.value || chartData.value.length === 0) return 0;
+                        const total = chartData.value.reduce((sum, item) => sum + item.count, 0);
+                        return total === 0 ? 0 : Math.round((count / total) * 100);
+                    };
+
+                    // Format timestamp
+                    const formatTimestamp = (timestamp) => {
+                        if (!timestamp) return '';
+                        return new Date(timestamp).toLocaleString();
+                    };
+
+                    // Handle image errors
                     const handleImageError = (event) => {
                         console.log('Image failed to load:', event);
                     };
+
+                    // Create or update the chart
+                    const updateChart = () => {
+                        if (!chartCanvas.value || !chartData.value) return;
+
+                        // Check if Chart.js is loaded
+                        if (typeof Chart === 'undefined') {
+                            console.warn('Chart.js is not loaded yet, retrying...');
+                            setTimeout(() => {
+                                updateChart();
+                            }, 500);
+                            return;
+                        }
+
+                        const ctx = chartCanvas.value.getContext('2d');
+                        
+                        // Destroy existing chart if it exists
+                        const existingChart = Chart.getChart(ctx);
+                        if (existingChart) {
+                            existingChart.destroy();
+                        }
+                        
+                        const labels = chartData.value.map(item => {
+                            const candidate = getCandidateById(item.candidateId);
+                            const label = candidate ? candidate.name : `Candidate ${item.candidateId}`;
+                            console.log(`Mapping candidateId ${item.candidateId} to label: "${label}"`);
+                            return label;
+                        });
+                        
+                        const data = chartData.value.map(item => {
+                            console.log(`Mapping candidateId ${item.candidateId} to count: ${item.count}`);
+                            return item.count;
+                        });
+                        
+                        console.log('Chart labels:', labels);
+                        console.log('Chart data:', data);
+                        
+                        const colors = ['#1976d2', '#42a5f5', '#82b1ff', '#ff5722', '#4caf50', '#ff9800'];
+
+                        try {
+                            // Always create a new chart instead of updating
+                            chart.value = new Chart(ctx, {
+                                type: 'bar',
+                                data: {
+                                    labels: labels,
+                                    datasets: [{
+                                        label: 'Votes',
+                                        data: data,
+                                        backgroundColor: colors.slice(0, data.length),
+                                        borderColor: colors.slice(0, data.length),
+                                        borderWidth: 2,
+                                        borderRadius: 8,
+                                        borderSkipped: false,
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    layout: {
+                                        padding: 10
+                                    },
+                                    plugins: {
+                                        legend: {
+                                            display: false
+                                        },
+                                        title: {
+                                            display: true,
+                                            text: 'Real-time Vote Count',
+                                            font: {
+                                                size: 16,
+                                                weight: 'bold'
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        y: {
+                                            beginAtZero: true,
+                                            ticks: {
+                                                stepSize: 1,
+                                                precision: 0
+                                            }
+                                        },
+                                        x: {
+                                            ticks: {
+                                                maxRotation: 45,
+                                                minRotation: 0
+                                            }
+                                        }
+                                    },
+                                    animation: {
+                                        duration: 500,
+                                        easing: 'easeInOutQuart'
+                                    },
+                                    interaction: {
+                                        intersect: false,
+                                        mode: 'index'
+                                    }
+                                }
+                            });
+                            
+                            console.log('Chart created successfully');
+                        } catch (error) {
+                            console.error('Error creating chart:', error);
+                            // Fallback: try with minimal configuration
+                            try {
+                                chart.value = new Chart(ctx, {
+                                    type: 'bar',
+                                    data: {
+                                        labels: labels,
+                                        datasets: [{
+                                            label: 'Votes',
+                                            data: data,
+                                            backgroundColor: colors.slice(0, data.length),
+                                        }]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false
+                                    }
+                                });
+                                console.log('Chart created with fallback configuration');
+                            } catch (fallbackError) {
+                                console.error('Failed to create chart even with fallback:', fallbackError);
+                            }
+                        }
+                    };
+
+                    // Update chart data from WebSocket results
+                    const updateChartData = (results) => {
+                        console.log('updateChartData called with:', results);
+                        
+                        if (!results || !results.voteCount) {
+                            console.warn('Invalid results data received in updateChartData:', results);
+                            return;
+                        }
+                        
+                        if (!Array.isArray(results.voteCount)) {
+                            console.warn('voteCount is not an array:', results.voteCount);
+                            return;
+                        }
+                        
+                        console.log('Setting chartData.value to:', results.voteCount);
+                        chartData.value = results.voteCount;
+                        console.log('chartData.value after assignment:', chartData.value);
+                        
+                        // Validate each vote count item
+                        results.voteCount.forEach((item, index) => {
+                            console.log(`Vote item ${index}:`, item);
+                            console.log(`  candidateId: ${item.candidateId}, count: ${item.count}`);
+                        });
+                        
+                        nextTick(() => {
+                            // Ensure canvas is ready before updating chart
+                            if (chartCanvas.value) {
+                                console.log('Canvas is ready, updating chart in 100ms');
+                                setTimeout(() => {
+                                    console.log('Calling updateChart with chartData:', chartData.value);
+                                    updateChart();
+                                }, 100); // Small delay for DOM readiness
+                            } else {
+                                console.warn('Canvas not ready for chart update');
+                            }
+                        });
+                    };
+
+                    // Computed property for sorted results
+                    const sortedResults = computed(() => {
+                        if (!chartData.value) return [];
+                        
+                        return chartData.value.map(item => ({
+                            candidateId: item.candidateId,
+                            count: item.count,
+                            candidate: getCandidateById(item.candidateId)
+                        })).sort((a, b) => b.count - a.count);
+                    });
+
+                    // Watch WebSocket connection status
+                    watch(websocket, (newWebSocket) => {
+                        if (newWebSocket) {
+                            isConnected.value = newWebSocket.readyState === WebSocket.OPEN;
+                            
+                            newWebSocket.addEventListener('open', () => {
+                                isConnected.value = true;
+                            });
+                            
+                            newWebSocket.addEventListener('close', () => {
+                                isConnected.value = false;
+                            });
+                        } else {
+                            isConnected.value = false;
+                        }
+                    }, { immediate: true });
+
+                    // Watch for real-time results updates
+                    watch(realTimeResults, (newResults) => {
+                        console.log('Real-time results watcher triggered:', newResults);
+                        if (newResults && newResults.voteCount) {
+                            console.log('Valid results detected, calling updateChartData');
+                            console.log('voteCount array:', newResults.voteCount);
+                            console.log('Timestamp:', newResults.timestamp);
+                            updateChartData(newResults);
+                            lastUpdate.value = newResults.timestamp;
+                        } else {
+                            console.warn('Invalid or missing voteCount in results:', newResults);
+                        }
+                    }, { immediate: true });
+
+                    onMounted(async () => {
+                        console.log('Results component mounted - establishing WebSocket connection');
+                        clearMessages();
+                        
+                        // First fetch candidates
+                        await fetchCandidates();
+                        
+                        // Then immediately connect to WebSocket for real-time updates
+                        connectWebSocket();
+                        
+                        // Wait for Chart.js to be loaded before initializing chart
+                        const waitForChart = () => {
+                            if (typeof Chart !== 'undefined') {
+                                // Initialize chart with empty data to prepare for real-time updates
+                                nextTick(() => {
+                                    if (!chartData.value && candidates.value.length > 0) {
+                                        // Create empty chart data to initialize the chart
+                                        chartData.value = candidates.value.map(candidate => ({
+                                            candidateId: candidate.id,
+                                            count: 0
+                                        }));
+                                        setTimeout(() => {
+                                            console.log('Initializing chart with empty data');
+                                            updateChart();
+                                        }, 200);
+                                    }
+                                });
+                            } else {
+                                console.log('Waiting for Chart.js to load...');
+                                setTimeout(waitForChart, 100);
+                            }
+                        };
+                        
+                        waitForChart();
+                    });
+
+                    onUnmounted(() => {
+                        console.log('Results component unmounting, cleaning up...');
+                        disconnectWebSocket();
+                        
+                        // Clean up chart
+                        if (chartCanvas.value && typeof Chart !== 'undefined') {
+                            const ctx = chartCanvas.value.getContext('2d');
+                            const existingChart = Chart.getChart(ctx);
+                            if (existingChart) {
+                                try {
+                                    existingChart.destroy();
+                                    console.log('Chart destroyed successfully');
+                                } catch (error) {
+                                    console.error('Error destroying chart:', error);
+                                }
+                            }
+                        }
+                        
+                        if (chart.value) {
+                            try {
+                                chart.value.destroy();
+                            } catch (error) {
+                                console.error('Error destroying chart reference:', error);
+                            }
+                            chart.value = null;
+                        }
+                    });
 
                     return {
                         candidates,
                         loading,
                         error,
+                        chartCanvas,
+                        chartData,
+                        sortedResults,
+                        lastUpdate,
+                        isConnected,
                         handleImageError,
-                        clearMessages
+                        clearMessages,
+                        getPercentage,
+                        formatTimestamp
                     };
                 }
             };
