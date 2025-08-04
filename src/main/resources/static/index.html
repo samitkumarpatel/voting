@@ -69,8 +69,21 @@
                 },
             });
 
-            // API Base URL
-            const API_BASE_URL = 'http://localhost:8080';
+            // API Base URL - Dynamic based on current host and port
+            const getApiBaseUrl = () => {
+                const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+                const host = window.location.hostname;
+                const port = window.location.port || (protocol === 'https:' ? '443' : '80');
+                
+                // If running on a different port (like development), use the same port
+                // Otherwise, assume API is on port 8080
+                const apiPort = port !== '80' && port !== '443' && port !== '8080' ? '8080' : port;
+                
+                return `${protocol}//${host}:${apiPort}`;
+            };
+
+            const API_BASE_URL = getApiBaseUrl();
+            console.log('API Base URL:', API_BASE_URL);
 
             // Utility functions for cookie management
             const cookieUtils = {
@@ -243,8 +256,22 @@
                             websocket.value.close();
                         }
 
-                        console.log('Connecting to WebSocket: ws://localhost:8080/results');
-                        websocket.value = new WebSocket('ws://localhost:8080/results');
+                        // Dynamic WebSocket URL based on current host and port
+                        const getWebSocketUrl = () => {
+                            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                            const host = window.location.hostname;
+                            const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
+                            
+                            // If running on a different port (like development), use port 8080 for WebSocket
+                            // Otherwise, use the same port as the current page
+                            const wsPort = port !== '80' && port !== '443' && port !== '8080' ? '8080' : port;
+                            
+                            return `${protocol}//${host}:${wsPort}/results`;
+                        };
+
+                        const websocketUrl = getWebSocketUrl();
+                        console.log('Connecting to WebSocket:', websocketUrl);
+                        websocket.value = new WebSocket(websocketUrl);
                         
                         websocket.value.onopen = () => {
                             console.log('WebSocket connected to results endpoint');
