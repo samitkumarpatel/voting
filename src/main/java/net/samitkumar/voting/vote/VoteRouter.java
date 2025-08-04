@@ -3,6 +3,8 @@ package net.samitkumar.voting.vote;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.samitkumar.voting.db.CandidateRepository;
+import net.samitkumar.voting.db.ErrorVote;
+import net.samitkumar.voting.db.ErrorVoteRepository;
 import net.samitkumar.voting.db.Vote;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -29,6 +31,7 @@ public class VoteRouter {
     static final String VOTE_COOKIE_NAME = "voteId";
     final ReactiveRedisTemplate<String, Vote> reactiveRedisTemplate;
     final CandidateRepository candidateRepository;
+    final ErrorVoteRepository errorVoteRepository;
 
     @Value("${spring.data.redis.channel-name}")
     private String redisChannelName;
@@ -40,11 +43,22 @@ public class VoteRouter {
                 .GET("/candidate", this::allCandidates)
                 .GET("/candidate/{id}", this::candidateById)
                 .POST("/vote", this::handleVote)
+                .GET("/vote/{voterId}/status", this::getErrorVoteByVoterId)
                 .after((req,res) -> {
                     log.info("{} {} {}", req.method(), req.path(), res.statusCode());
                     return res;
                 })
                 .build();
+    }
+
+    private Mono<ServerResponse> getErrorVoteByVoterId(ServerRequest request) {
+        return Mono
+                .fromCallable(() -> errorVoteRepository
+                        .findErrorVoteByVoterId(request.pathVariable("voterId"))
+                        .orElse(null))
+                .subscribeOn(Schedulers.boundedElastic())
+                .defaultIfEmpty(new ErrorVote(null, null, null, request.pathVariable("voterId"), "No error found", true))
+                .flatMap(ServerResponse.ok()::bodyValue);
     }
 
     private Mono<ServerResponse> candidateById(ServerRequest request) {
@@ -72,7 +86,7 @@ public class VoteRouter {
                                 .map(redisReplyId -> Map.of("voterId", v.voterId(), "processorId", redisReplyId))
                                 .flatMap(result -> ServerResponse
                                         .ok()
-                                        .cookie(ResponseCookie.from(VOTE_COOKIE_NAME, v.voterId()).build())
+                                        .cookie(ResponseCookie.from(VOTE_COOKIE_NAME, v.voterId()).sameSite("None").secure(true).path("/").build())
                                         .bodyValue(result)
                                 )
                         )

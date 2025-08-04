@@ -41,7 +41,7 @@ public class VoteProcessor {
                     log.error("Persisting Vote::onError {}", o, throwable);
                     var vote = (Vote) o;
                     errorVoteRepository.save(
-                            new ErrorVote(null, vote.votingTime(), vote.candidateId(), vote.voterId(), throwable.getMessage())
+                            new ErrorVote(null, vote.votingTime(), vote.candidateId(), vote.voterId(), throwable.getMessage(), false)
                     );
                 })
                 .doOnNext(db -> log.info("Persisting Vote::dbReply {}", db))

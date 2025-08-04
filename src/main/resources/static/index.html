@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Voting App</title>
+        <link href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/@mdi/font@6.x/css/materialdesignicons.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.css" rel="stylesheet">
+        <style>
+            body {
+                background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%);
+                min-height: 100vh;
+            }
+            .gradient-background {
+                background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%);
+                min-height: 100vh;
+            }
+            .candidate-avatar {
+                width: 80px !important;
+                height: 80px !important;
+            }
+            .vote-card {
+                transition: all 0.3s ease;
+            }
+            .vote-card:hover {
+                transform: translateY(-4px);
+            }
+        </style>
+    </head>
+    <body>
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+        <script src="https://unpkg.com/vue-demi"></script>
+        <script src="https://unpkg.com/pinia@2/dist/pinia.iife.js"></script>
+        <script src="https://unpkg.com/vue-router@4.0.15/dist/vue-router.global.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vuetify@3.4.0/dist/vuetify.min.js"></script>
+        
+        <div id="app"></div>
+
+        <script>
+            const { createApp, ref, computed, onMounted } = Vue;
+            const { createPinia, defineStore, storeToRefs } = Pinia;
+            const { createRouter, createWebHashHistory } = VueRouter;
+            const { createVuetify } = Vuetify;
+
+            // Create Vuetify instance
+            const vuetify = createVuetify({
+                theme: {
+                    defaultTheme: 'light',
+                    themes: {
+                        light: {
+                            colors: {
+                                primary: '#1976d2',
+                                secondary: '#42a5f5',
+                                accent: '#82b1ff',
+                                error: '#ff5252',
+                                info: '#2196f3',
+                                success: '#4caf50',
+                                warning: '#ffc107',
+                            },
+                        },
+                    },
+                },
+            });
+
+            // API Base URL
+            const API_BASE_URL = 'http://localhost:8080';
+
+            // Utility functions for cookie management
+            const cookieUtils = {
+                set(name, value, days = 30) {
+                    const expires = new Date();
+                    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+                    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+                },
+                get(name) {
+                    const nameEQ = name + "=";
+                    const ca = document.cookie.split(';');
+                    for(let i = 0; i < ca.length; i++) {
+                        let c = ca[i];
+                        while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+                        if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+                    }
+                    return null;
+                },
+                delete(name) {
+                    document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+                }
+            };
+
+            // Pinia Store
+            const useVotingStore = defineStore('voting', () => {
+                const candidates = ref([]);
+                const loading = ref(false);
+                const error = ref('');
+                const success = ref('');
+                const voting = ref(false);
+                const voteStatus = ref(null);
+                const hasVotedState = ref(false); // Reactive state for voting status
+
+                // Check if user has already voted
+                const updateVoteState = () => {
+                    const voteId = cookieUtils.get('voteId');
+                    console.log('Checking if user has voted. voteId cookie:', voteId);
+                    hasVotedState.value = voteId !== null;
+                    return hasVotedState.value;
+                };
+
+                // Fetch candidates
+                const fetchCandidates = async () => {
+                    loading.value = true;
+                    error.value = '';
+                    try {
+                        console.log('Fetching candidates...');
+                        console.log('Current cookies:', document.cookie);
+                        
+                        const response = await fetch(`${API_BASE_URL}/candidate`, {
+                            credentials: 'include' // Include cookies to see if they're sent
+                        });
+                        
+                        if (!response.ok) throw new Error('Failed to fetch candidates');
+                        candidates.value = await response.json();
+                        console.log('Candidates fetched:', candidates.value.length);
+                        
+                        // Check vote status after fetching candidates
+                        updateVoteState();
+                    } catch (err) {
+                        console.error('Fetch candidates error:', err);
+                        error.value = err.message;
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                // Submit vote
+                const submitVote = async (candidateId) => {
+                    voting.value = true;
+                    error.value = '';
+                    success.value = '';
+                    
+                    try {
+                        console.log('Submitting vote for candidate:', candidateId);
+                        
+                        const response = await fetch(`${API_BASE_URL}/vote`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ candidateId }),
+                            credentials: 'include' // To handle cookies
+                        });
+
+                        console.log('Vote response status:', response.status);
+                        console.log('Vote response headers:', Object.fromEntries(response.headers.entries()));
+                        
+                        // Check specifically for Set-Cookie header
+                        const setCookieHeader = response.headers.get('set-cookie');
+                        console.log('Set-Cookie header:', setCookieHeader);
+
+                        if (!response.ok) throw new Error('Failed to submit vote');
+                        
+                        const result = await response.json();
+                        console.log('Vote response data:', result);
+                        console.log('All cookies after vote response:', document.cookie);
+                        
+                        // Check voting status
+                        await checkVoteStatus(result.voterId);
+                        
+                    } catch (err) {
+                        console.error('Vote submission error:', err);
+                        error.value = err.message;
+                    } finally {
+                        voting.value = false;
+                    }
+                };
+
+                // Check vote status from server
+                const checkVoteStatus = async (voterId) => {
+                    try {
+                        console.log('Checking vote status for voterId:', voterId);
+                        
+                        const response = await fetch(`${API_BASE_URL}/vote/${voterId}/status`, {
+                            credentials: 'include' // Include cookies in status check too
+                        });
+                        
+                        console.log('Status check response:', response.status);
+                        console.log('Cookies being sent with status check:', document.cookie);
+                        
+                        if (!response.ok) throw new Error('Failed to check vote status');
+                        
+                        const status = await response.json();
+                        console.log('Vote status result:', status);
+                        voteStatus.value = status;
+                        
+                        if (status.isSuccess) {
+                            success.value = 'Your vote has been successfully recorded!';
+                            console.log('Vote successful - cookie should be preserved');
+                            // Update the voting state
+                            updateVoteState();
+                        } else {
+                            error.value = status.error || 'Vote failed. Please try again.';
+                            console.log('Vote failed - clearing cookie for retry');
+                            // Clear the vote cookie for retry
+                            cookieUtils.delete('voteId');
+                            updateVoteState(); // Update state after clearing cookie
+                        }
+                    } catch (err) {
+                        console.error('Vote status check error:', err);
+                        error.value = err.message;
+                        cookieUtils.delete('voteId');
+                        updateVoteState(); // Update state after clearing cookie
+                    }
+                };
+
+                // Clear messages
+                const clearMessages = () => {
+                    error.value = '';
+                    success.value = '';
+                    voteStatus.value = null;
+                };
+
+                // Clear vote state (for testing or admin purposes)
+                const clearVoteState = () => {
+                    cookieUtils.delete('voteId');
+                    hasVotedState.value = false;
+                    success.value = '';
+                    error.value = '';
+                };
+
+                return {
+                    candidates,
+                    loading,
+                    error,
+                    success,
+                    voting,
+                    voteStatus,
+                    hasVoted: hasVotedState, // Use reactive state instead of computed
+                    fetchCandidates,
+                    submitVote,
+                    checkVoteStatus,
+                    clearMessages,
+                    clearVoteState
+                };
+            });
+
+            // Vote Component with Material UI
+            const VoteComponent = {
+                template: `
+                    <v-container>
+                        <v-row justify="center">
+                            <v-col cols="12">
+                                <v-card class="text-center pa-6 mb-6" color="rgba(255,255,255,0.9)">
+                                    <v-card-title class="text-h3 font-weight-bold">
+                                        <v-icon size="40" class="mr-2">mdi-vote</v-icon>
+                                        Cast Your Vote
+                                    </v-card-title>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Loading State -->
+                        <v-row v-if="loading" justify="center">
+                            <v-col cols="12" class="text-center">
+                                <v-progress-circular 
+                                    indeterminate 
+                                    color="white" 
+                                    size="50"
+                                    width="5"
+                                ></v-progress-circular>
+                                <v-card class="mt-4 pa-4" color="rgba(255,255,255,0.9)">
+                                    <v-card-text class="text-h6">Loading candidates...</v-card-text>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Error Alert -->
+                        <v-row v-if="error">
+                            <v-col cols="12">
+                                <v-alert
+                                    type="error"
+                                    variant="tonal"
+                                    closable
+                                    @click:close="clearMessages"
+                                >
+                                    {{ error }}
+                                </v-alert>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Success Alert -->
+                        <v-row v-if="success">
+                            <v-col cols="12">
+                                <v-alert
+                                    type="success"
+                                    variant="tonal"
+                                    closable
+                                    @click:close="clearMessages"
+                                >
+                                    {{ success }}
+                                </v-alert>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Already Voted Status -->
+                        <v-row v-if="hasVoted && !error" justify="center">
+                            <v-col cols="12" md="6">
+                                <v-card class="pa-6 text-center" color="success" variant="elevated">
+                                    <v-icon size="80" color="white" class="mb-4">mdi-check-circle</v-icon>
+                                    <v-card-title class="text-h4 text-white">Vote Submitted Successfully!</v-card-title>
+                                    <v-card-text class="text-h6 text-white">
+                                        Thank you for participating in the voting process. Your vote has been recorded.
+                                    </v-card-text>
+                                    <v-card-actions class="justify-center">
+                                        <v-btn 
+                                            color="white" 
+                                            variant="outlined"
+                                            @click="goToResults"
+                                        >
+                                            <v-icon left>mdi-chart-bar</v-icon>
+                                            View Results
+                                        </v-btn>
+                                    </v-card-actions>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                                                <!-- Candidates Grid -->
+                        <v-row v-else-if="candidates.length && !loading && !hasVoted" justify="center" align="center">
+                            <v-col 
+                                v-for="candidate in candidates" 
+                                :key="candidate.id"
+                                cols="12" 
+                                sm="6" 
+                                md="4"
+                                lg="3"
+                                class="d-flex justify-center"
+                            >
+                                <v-card 
+                                    class="vote-card pa-3 text-center mx-auto"
+                                    :class="{ 
+                                        'elevation-8': !voting && !hasVoted, 
+                                        'elevation-2': voting,
+                                        'opacity-50': hasVoted
+                                    }"
+                                    :disabled="voting || hasVoted"
+                                    hover
+                                    @click="vote(candidate.id)"
+                                    :style="{ cursor: (voting || hasVoted) ? 'not-allowed' : 'pointer' }"
+                                    max-width="300"
+                                >
+                                    <v-avatar 
+                                        size="80" 
+                                        class="ma-3 candidate-avatar"
+                                    >
+                                        <v-img
+                                            :src="candidate.partySymbolUrl"
+                                            :alt="candidate.name + ' Symbol'"
+                                            @error="handleImageError"
+                                        >
+                                            <template v-slot:placeholder>
+                                                <v-icon size="60" color="grey">mdi-account</v-icon>
+                                            </template>
+                                        </v-img>
+                                    </v-avatar>
+                                    
+                                    <v-card-title class="text-h6 font-weight-bold">
+                                        {{ candidate.name }}
+                                        <v-icon v-if="hasVoted" color="success" class="ml-2">mdi-check-circle</v-icon>
+                                    </v-card-title>
+                                    
+                                    <v-card-actions class="justify-center">
+                                        <v-btn
+                                            color="primary"
+                                            size="default"
+                                            variant="elevated"
+                                            :loading="voting"
+                                            :disabled="voting || hasVoted"
+                                            @click.stop="vote(candidate.id)"
+                                            prepend-icon="mdi-vote"
+                                        >
+                                            {{ voting ? 'Voting...' : hasVoted ? 'Voted' : 'Vote' }}
+                                        </v-btn>
+                                    </v-card-actions>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                    </v-container>
+                `,
+                setup() {
+                    const store = useVotingStore();
+                    const { candidates, loading, error, success, voting, hasVoted } = storeToRefs(store);
+                    const { fetchCandidates, submitVote, clearMessages } = store;
+
+                    onMounted(() => {
+                        clearMessages();
+                        fetchCandidates();
+                    });
+
+                    const vote = async (candidateId) => {
+                        if (voting.value || hasVoted.value) return;
+                        await submitVote(candidateId);
+                    };
+
+                    const handleImageError = (event) => {
+                        console.log('Image failed to load:', event);
+                    };
+
+                    const goToResults = () => {
+                        this.$router.push('/results');
+                    };
+
+                    return {
+                        candidates,
+                        loading,
+                        error,
+                        success,
+                        voting,
+                        hasVoted,
+                        vote,
+                        handleImageError,
+                        clearMessages,
+                        goToResults
+                    };
+                }
+            };
+
+            // Results Component with Material UI
+            const ResultsComponent = {
+                template: `
+                    <v-container>
+                        <v-row justify="center">
+                            <v-col cols="12">
+                                <v-card class="text-center pa-6 mb-6" color="rgba(255,255,255,0.9)">
+                                    <v-card-title class="text-h3 font-weight-bold">
+                                        <v-icon size="40" class="mr-2">mdi-chart-bar</v-icon>
+                                        Voting Results
+                                    </v-card-title>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Loading State -->
+                        <v-row v-if="loading" justify="center">
+                            <v-col cols="12" class="text-center">
+                                <v-progress-circular 
+                                    indeterminate 
+                                    color="white" 
+                                    size="50"
+                                    width="5"
+                                ></v-progress-circular>
+                                <v-card class="mt-4 pa-4" color="rgba(255,255,255,0.9)">
+                                    <v-card-text class="text-h6">Loading results...</v-card-text>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Error Alert -->
+                        <v-row v-if="error">
+                            <v-col cols="12">
+                                <v-alert
+                                    type="error"
+                                    variant="tonal"
+                                    closable
+                                    @click:close="clearMessages"
+                                >
+                                    {{ error }}
+                                </v-alert>
+                            </v-col>
+                        </v-row>
+                        
+                        <!-- Results List -->
+                        <v-row v-if="candidates.length && !loading">
+                            <v-col cols="12">
+                                <v-card class="pa-4" color="rgba(255,255,255,0.95)">
+                                    <v-list>
+                                        <v-list-item
+                                            v-for="(candidate, index) in candidates"
+                                            :key="candidate.id"
+                                            class="mb-2"
+                                        >
+                                            <template v-slot:prepend>
+                                                <v-avatar size="60">
+                                                    <v-img
+                                                        :src="candidate.partySymbolUrl"
+                                                        :alt="candidate.name + ' Symbol'"
+                                                        @error="handleImageError"
+                                                    >
+                                                        <template v-slot:placeholder>
+                                                            <v-icon size="30" color="grey">mdi-account</v-icon>
+                                                        </template>
+                                                    </v-img>
+                                                </v-avatar>
+                                            </template>
+                                            
+                                            <v-list-item-title class="text-h6 font-weight-bold">
+                                                {{ candidate.name }}
+                                            </v-list-item-title>
+                                            
+                                            <template v-slot:append>
+                                                <v-chip
+                                                    color="primary"
+                                                    variant="elevated"
+                                                    size="large"
+                                                    prepend-icon="mdi-vote"
+                                                >
+                                                    {{ candidate.votes || 0 }} votes
+                                                </v-chip>
+                                            </template>
+                                            
+                                            <v-divider v-if="index < candidates.length - 1" class="mt-3"></v-divider>
+                                        </v-list-item>
+                                    </v-list>
+                                </v-card>
+                            </v-col>
+                        </v-row>
+                    </v-container>
+                `,
+                setup() {
+                    const store = useVotingStore();
+                    const { candidates, loading, error } = storeToRefs(store);
+                    const { fetchCandidates, clearMessages } = store;
+
+                    onMounted(() => {
+                        clearMessages();
+                        fetchCandidates();
+                    });
+
+                    const handleImageError = (event) => {
+                        console.log('Image failed to load:', event);
+                    };
+
+                    return {
+                        candidates,
+                        loading,
+                        error,
+                        handleImageError,
+                        clearMessages
+                    };
+                }
+            };
+
+            // Router setup
+            const routes = [
+                { path: '/', redirect: '/vote' },
+                { path: '/vote', component: VoteComponent },
+                { path: '/results', component: ResultsComponent }
+            ];
+           
+            const router = createRouter({
+                history: createWebHashHistory(),
+                routes
+            });
+
+            // Create Pinia instance
+            const pinia = createPinia();
+
+            // Create and mount the app with Vuetify
+            createApp({
+                template: `
+                    <v-app class="gradient-background">
+                        <v-app-bar color="rgba(255,255,255,0.1)" class="backdrop-blur">
+                            <v-container>
+                                <v-row align="center" justify="center">
+                                    <v-col cols="auto">
+                                        <v-btn-toggle
+                                            v-model="activeTab"
+                                            color="white"
+                                            mandatory
+                                            variant="elevated"
+                                        >
+                                            <v-btn 
+                                                value="vote" 
+                                                :to="{ path: '/vote' }"
+                                                prepend-icon="mdi-vote"
+                                            >
+                                                Vote
+                                            </v-btn>
+                                            <v-btn 
+                                                value="results" 
+                                                :to="{ path: '/results' }"
+                                                prepend-icon="mdi-chart-bar"
+                                            >
+                                                Results
+                                            </v-btn>
+                                        </v-btn-toggle>
+                                    </v-col>
+                                </v-row>
+                            </v-container>
+                        </v-app-bar>
+                        
+                        <v-main>
+                            <router-view></router-view>
+                        </v-main>
+                    </v-app>
+                `,
+                setup() {
+                    const activeTab = ref('vote');
+
+                    return {
+                        activeTab
+                    };
+                }
+            })
+            .use(pinia)            
+            .use(router)
+            .use(vuetify)
+            .mount('#app');
+        </script>
+    </body>
+</html>
