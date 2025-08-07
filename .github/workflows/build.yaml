@@ -17,4 +17,4 @@ jobs:
     with:
       build-jar: false
       build-image: true
-      native-image: false
+      native-image: true
