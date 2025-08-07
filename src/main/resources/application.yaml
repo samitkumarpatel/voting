@@ -10,10 +10,18 @@ spring:
       url: ${REDIS_URL:redis://localhost:6379}
       channel-name: voting-channel
 
-
-  jackson:
-    serialization:
-      write-dates-as-timestamps: false
+  reactor:
+    context-propagation: auto
 
 server:
-  shutdown: immediate
+  shutdown: graceful
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus

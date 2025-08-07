@@ -31,6 +31,47 @@
                 height: 300px;
                 width: 100%;
             }
+            
+            /* Countdown animations and styles */
+            .countdown-container {
+                transition: all 0.3s ease;
+            }
+            
+            .countdown-container:hover {
+                transform: scale(1.1);
+            }
+            
+            .countdown-progress {
+                transition: all 0.5s ease;
+            }
+            
+            .pulse-animation {
+                animation: pulse 1s infinite;
+            }
+            
+            @keyframes pulse {
+                0% {
+                    transform: scale(1);
+                    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+                }
+                70% {
+                    transform: scale(1.05);
+                    box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+                }
+                100% {
+                    transform: scale(1);
+                    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+                }
+            }
+            
+            .countdown-number {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                line-height: 1;
+                transition: all 0.3s ease;
+            }
         </style>
     </head>
     <body>
@@ -552,7 +593,64 @@
                                         Live Voting Results
                                     </v-card-title>
                                     <v-card-subtitle class="text-h6" v-if="lastUpdate">
-                                        Last updated: {{ formatTimestamp(lastUpdate) }}
+                                        <div class="d-flex flex-column align-center gap-4">
+                                            <!-- Last Updated Section -->
+                                            <div class="d-flex align-center">
+                                                <v-icon class="mr-2" size="small">mdi-clock-outline</v-icon>
+                                                <span>Last updated: {{ formatTimestamp(lastUpdate) }}</span>
+                                            </div>
+                                            
+                                            <!-- Countdown Timer Section -->
+                                            <div class="d-flex align-center justify-center">
+                                                <div class="countdown-container position-relative mr-4" 
+                                                     @click="toggleCountdown"
+                                                     style="cursor: pointer;">
+                                                    <v-progress-circular
+                                                        :model-value="(countdown / 10) * 100"
+                                                        :color="countdown <= 3 ? 'error' : countdown <= 5 ? 'warning' : 'success'"
+                                                        :size="60"
+                                                        :width="5"
+                                                        class="countdown-progress"
+                                                        :class="{ 
+                                                            'pulse-animation': countdown <= 3,
+                                                            'opacity-50': !isCountdownActive 
+                                                        }"
+                                                    >
+                                                        <div class="countdown-number text-h5 font-weight-bold"
+                                                             :class="{ 
+                                                                'text-error': countdown <= 3, 
+                                                                'text-warning': countdown <= 5 && countdown > 3,
+                                                                'text-success': countdown > 5
+                                                             }">
+                                                            <v-icon v-if="!isCountdownActive" size="small">mdi-pause</v-icon>
+                                                            <span v-else>{{ countdown }}</span>
+                                                        </div>
+                                                    </v-progress-circular>
+                                                    <v-tooltip 
+                                                        activator="parent" 
+                                                        location="bottom"
+                                                    >
+                                                        <div>
+                                                            <div>{{ isCountdownActive ? 'Time until next expected update' : 'Countdown paused' }}</div>
+                                                            <div class="text-caption mt-1">Click to {{ isCountdownActive ? 'pause' : 'resume' }}</div>
+                                                        </div>
+                                                    </v-tooltip>
+                                                </div>
+                                                <div class="d-flex flex-column align-center">
+                                                    <span class="text-body-2 font-weight-medium">{{ isCountdownActive ? 'Next update in' : 'Timer paused' }}</span>
+                                                    <v-chip 
+                                                        v-if="countdown <= 3 && isCountdownActive"
+                                                        color="error"
+                                                        variant="tonal"
+                                                        size="small"
+                                                        class="mt-1"
+                                                    >
+                                                        <v-icon size="x-small" class="mr-1">mdi-alert</v-icon>
+                                                        Overdue
+                                                    </v-chip>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </v-card-subtitle>
                                 </v-card>
                             </v-col>
@@ -693,6 +791,63 @@
                     const chartData = ref(null);
                     const lastUpdate = ref(null);
                     const isConnected = ref(false);
+                    const countdown = ref(10);
+                    const countdownInterval = ref(null);
+                    const isCountdownActive = ref(true);
+
+                    // Start the countdown timer with enhanced effects
+                    const startCountdown = () => {
+                        // Clear any existing interval
+                        if (countdownInterval.value) {
+                            clearInterval(countdownInterval.value);
+                        }
+                        
+                        // Reset to 10 and start counting down
+                        countdown.value = 10;
+                        isCountdownActive.value = true;
+                        
+                        countdownInterval.value = setInterval(() => {
+                            if (countdown.value > 0) {
+                                countdown.value--;
+                                
+                                // Add visual feedback for critical moments
+                                if (countdown.value <= 3 && countdown.value > 0) {
+                                    // Trigger a small vibration if supported
+                                    if (navigator.vibrate) {
+                                        navigator.vibrate(100);
+                                    }
+                                    
+                                    // Log for debugging
+                                    console.log(`Critical countdown: ${countdown.value} seconds remaining`);
+                                }
+                                
+                                if (countdown.value === 0) {
+                                    console.log('Countdown reached zero - expecting WebSocket update soon');
+                                }
+                            } else {
+                                // When it reaches 0, restart from 10
+                                countdown.value = 10;
+                            }
+                        }, 1000);
+                    };
+
+                    // Stop the countdown timer
+                    const stopCountdown = () => {
+                        if (countdownInterval.value) {
+                            clearInterval(countdownInterval.value);
+                            countdownInterval.value = null;
+                        }
+                        isCountdownActive.value = false;
+                    };
+
+                    // Pause/Resume countdown functionality
+                    const toggleCountdown = () => {
+                        if (isCountdownActive.value) {
+                            stopCountdown();
+                        } else {
+                            startCountdown();
+                        }
+                    };
 
                     // Define all functions first before any watchers
 
@@ -915,6 +1070,7 @@
                             console.log('Timestamp:', newResults.timestamp);
                             updateChartData(newResults);
                             lastUpdate.value = newResults.timestamp;
+                            startCountdown(); // Restart countdown from 10
                         } else {
                             console.warn('Invalid or missing voteCount in results:', newResults);
                         }
@@ -923,6 +1079,9 @@
                     onMounted(async () => {
                         console.log('Results component mounted - establishing WebSocket connection');
                         clearMessages();
+                        
+                        // Start the countdown timer
+                        startCountdown();
                         
                         // First fetch candidates
                         await fetchCandidates();
@@ -958,6 +1117,10 @@
 
                     onUnmounted(() => {
                         console.log('Results component unmounting, cleaning up...');
+                        
+                        // Stop the countdown timer
+                        stopCountdown();
+                        
                         disconnectWebSocket();
                         
                         // Clean up chart
@@ -993,6 +1156,9 @@
                         sortedResults,
                         lastUpdate,
                         isConnected,
+                        countdown,
+                        isCountdownActive,
+                        toggleCountdown,
                         handleImageError,
                         clearMessages,
                         getPercentage,

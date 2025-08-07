@@ -27,7 +27,7 @@ public class VotingResultConfiguration {
     final ObjectMapper objectMapper;
 
     @Bean
-    Sinks.Many<String> sinks() {
+    Sinks.Many<String> sink() {
         return Sinks.many().multicast().onBackpressureBuffer();
     }
 
@@ -35,11 +35,11 @@ public class VotingResultConfiguration {
     public HandlerMapping handlerMapping() {
         Map<String, WebSocketHandler> map = new HashMap<>();
         map.put("/results", session -> session
-                .send(sinks().asFlux().map(session::textMessage))
+                .send(sink().asFlux().map(session::textMessage))
                 //echo back , if there is a message
                 .and(session
                         .receive()
-                        .map(webSocketMessage -> sinks().tryEmitNext(webSocketMessage.getPayloadAsText()))
+                        .map(webSocketMessage -> sink().tryEmitNext(webSocketMessage.getPayloadAsText()))
                 )
                 .then());
         int order = -1;
@@ -49,13 +49,12 @@ public class VotingResultConfiguration {
     @Scheduled(fixedRate = 10000)
     void scheduled() {
         log.info("Scheduled trigger to notify result to all ws session");
-        sinks().tryEmitNext(emitResponse());
+        sink().tryEmitNext(emitResponse());
     }
 
     @SneakyThrows
     private String emitResponse() {
         var votingResult = new VotingResults(LocalDateTime.now(),voteRepository.votingResults());
-        return objectMapper
-                .writeValueAsString(votingResult);
+        return objectMapper.writeValueAsString(votingResult);
     }
 }
